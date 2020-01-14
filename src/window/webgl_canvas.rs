@@ -6,12 +6,13 @@ use std::rc::Rc;
 use std::sync::mpsc::Sender;
 
 use event::{Action, Key, Modifiers, MouseButton, WindowEvent};
+use image::{GenericImage, Pixel};
+use stdweb::unstable::TryFrom;
 use stdweb::web::event as webevent;
 use stdweb::web::event::{ConcreteEvent, IEvent, IKeyboardEvent, IMouseEvent, IUiEvent};
 use stdweb::web::{self, html_element::CanvasElement, IEventTarget, IHtmlElement, IParentNode};
 use stdweb::{unstable::TryInto, Reference};
 use window::{AbstractCanvas, CanvasSetup};
-use image::{GenericImage, Pixel};
 
 #[derive(Clone, Debug, PartialEq, Eq, ReferenceType)]
 #[reference(instance_of = "Event")] // TODO: Better type check.
@@ -40,8 +41,15 @@ pub struct WebGLCanvas {
 }
 
 impl AbstractCanvas for WebGLCanvas {
-    fn open(_: &str, _: bool, _: u32, _: u32, setup: Option<CanvasSetup>, out_events: Sender<WindowEvent>) -> Self {
-        let hidpi_factor = js!{ return window.devicePixelRatio; }.try_into().unwrap();
+    fn open(
+        _: &str,
+        _: bool,
+        _: u32,
+        _: u32,
+        setup: Option<CanvasSetup>,
+        out_events: Sender<WindowEvent>,
+    ) -> Self {
+        let hidpi_factor = js! { return window.devicePixelRatio; }.try_into().unwrap();
         let canvas: CanvasElement = web::document()
             .query_selector("#canvas")
             .expect("No canvas found.")
@@ -77,6 +85,12 @@ impl AbstractCanvas for WebGLCanvas {
         let edata = data.clone();
         let _ = web::window().add_event_listener(move |e: webevent::MouseDownEvent| {
             let mut edata = edata.borrow_mut();
+            if e.target()
+                .and_then(|target| <CanvasElement>::try_from(target).ok())
+                .map_or(true, |canvas| canvas != edata.canvas)
+            {
+                return;
+            }
             let button = translate_mouse_button(&e);
             let _ = edata.pending_events.push(WindowEvent::MouseButton(
                 button,
@@ -89,6 +103,12 @@ impl AbstractCanvas for WebGLCanvas {
         let edata = data.clone();
         let _ = web::window().add_event_listener(move |e: webevent::MouseUpEvent| {
             let mut edata = edata.borrow_mut();
+            if e.target()
+                .and_then(|target| <CanvasElement>::try_from(target).ok())
+                .map_or(true, |canvas| canvas != edata.canvas)
+            {
+                return;
+            }
             let button = translate_mouse_button(&e);
             let _ = edata.pending_events.push(WindowEvent::MouseButton(
                 button,
@@ -101,7 +121,16 @@ impl AbstractCanvas for WebGLCanvas {
         let edata = data.clone();
         let _ = web::window().add_event_listener(move |e: webevent::MouseMoveEvent| {
             let mut edata = edata.borrow_mut();
-            edata.cursor_pos = Some((e.offset_x() as f64 * hidpi_factor, e.offset_y() as f64 * hidpi_factor));
+            if e.target()
+                .and_then(|target| <CanvasElement>::try_from(target).ok())
+                .map_or(true, |canvas| canvas != edata.canvas)
+            {
+                return;
+            }
+            edata.cursor_pos = Some((
+                e.offset_x() as f64 * hidpi_factor,
+                e.offset_y() as f64 * hidpi_factor,
+            ));
             let _ = edata.pending_events.push(WindowEvent::CursorPos(
                 e.offset_x() as f64 * hidpi_factor,
                 e.offset_y() as f64 * hidpi_factor,
@@ -111,20 +140,28 @@ impl AbstractCanvas for WebGLCanvas {
 
         let edata = data.clone();
         let _ = web::window().add_event_listener(move |e: WheelEvent| {
-            let delta_x: i32 = js!(
-                return @{e.as_ref()}.deltaX;
-            ).try_into()
-                .ok()
-                .unwrap_or(0);
-            let delta_y: i32 = js!(
-                return @{e.as_ref()}.deltaY;
-            ).try_into()
-                .ok()
-                .unwrap_or(0);
             let mut edata = edata.borrow_mut();
+            if e.target()
+                .and_then(|target| <CanvasElement>::try_from(target).ok())
+                .map_or(true, |canvas| canvas != edata.canvas)
+            {
+                return;
+            }
+            let delta_x: f64 = js!(
+                return @{e.as_ref()}.deltaX;
+            )
+            .try_into()
+            .ok()
+            .unwrap_or(0.0);
+            let delta_y: f64 = js!(
+                return @{e.as_ref()}.deltaY;
+            )
+            .try_into()
+            .ok()
+            .unwrap_or(0.0);
             let _ = edata.pending_events.push(WindowEvent::Scroll(
-                delta_x as f64,
-                -delta_y as f64,
+                delta_x / 10.0,
+                -delta_y / 10.0,
                 translate_mouse_modifiers(&e),
             ));
         });
