@@ -70,45 +70,38 @@ impl AbstractCanvas for WebGLCanvas {
         let edata = data.clone();
         let _ = web::window().add_event_listener(move |_: webevent::ResizeEvent| {
             let mut edata = edata.borrow_mut();
+            let (wo, ho) = (edata.canvas.offset_width(), edata.canvas.offset_height());
             let (w, h) = (
-                (edata.canvas.offset_width() as f64 * hidpi_factor) as u32,
-                (edata.canvas.offset_height() as f64 * hidpi_factor) as u32,
+                (wo as f64 * hidpi_factor) as u32,
+                (ho as f64 * hidpi_factor) as u32,
             );
             edata.canvas.set_width(w);
             edata.canvas.set_height(h);
             let _ = edata
                 .pending_events
-                .push(WindowEvent::FramebufferSize(w, h));
-            let _ = edata.pending_events.push(WindowEvent::Size(w, h));
+                .push(WindowEvent::FramebufferSize(w as u32, h as u32));
+            let _ = edata
+                .pending_events
+                .push(WindowEvent::Size(wo as u32, ho as u32));
         });
 
         let edata = data.clone();
-        let _ = web::window().add_event_listener(move |e: webevent::MouseDownEvent| {
-            let mut edata = edata.borrow_mut();
-            if e.target()
-                .and_then(|target| <CanvasElement>::try_from(target).ok())
-                .map_or(true, |canvas| canvas != edata.canvas)
-            {
-                return;
-            }
-            let button = translate_mouse_button(&e);
-            let _ = edata.pending_events.push(WindowEvent::MouseButton(
-                button,
-                Action::Press,
-                translate_mouse_modifiers(&e),
-            ));
-            edata.button_states[button as usize] = Action::Press;
-        });
+        let _ = data.clone().borrow_mut().canvas.add_event_listener(
+            move |e: webevent::MouseDownEvent| {
+                let mut edata = edata.borrow_mut();
+                let button = translate_mouse_button(&e);
+                let _ = edata.pending_events.push(WindowEvent::MouseButton(
+                    button,
+                    Action::Press,
+                    translate_mouse_modifiers(&e),
+                ));
+                edata.button_states[button as usize] = Action::Press;
+            },
+        );
 
         let edata = data.clone();
         let _ = web::window().add_event_listener(move |e: webevent::MouseUpEvent| {
             let mut edata = edata.borrow_mut();
-            if e.target()
-                .and_then(|target| <CanvasElement>::try_from(target).ok())
-                .map_or(true, |canvas| canvas != edata.canvas)
-            {
-                return;
-            }
             let button = translate_mouse_button(&e);
             let _ = edata.pending_events.push(WindowEvent::MouseButton(
                 button,
@@ -121,50 +114,43 @@ impl AbstractCanvas for WebGLCanvas {
         let edata = data.clone();
         let _ = web::window().add_event_listener(move |e: webevent::MouseMoveEvent| {
             let mut edata = edata.borrow_mut();
-            if e.target()
-                .and_then(|target| <CanvasElement>::try_from(target).ok())
-                .map_or(true, |canvas| canvas != edata.canvas)
-            {
-                return;
-            }
+            let rect = edata.canvas.get_bounding_client_rect();
             edata.cursor_pos = Some((
-                e.offset_x() as f64 * hidpi_factor,
-                e.offset_y() as f64 * hidpi_factor,
+                (e.client_x() as f64 - rect.get_x()) * hidpi_factor,
+                (e.client_y() as f64 - rect.get_y()) * hidpi_factor,
             ));
             let _ = edata.pending_events.push(WindowEvent::CursorPos(
-                e.offset_x() as f64 * hidpi_factor,
-                e.offset_y() as f64 * hidpi_factor,
+                (e.client_x() as f64 - rect.get_x()) * hidpi_factor,
+                (e.client_y() as f64 - rect.get_y()) * hidpi_factor,
                 translate_mouse_modifiers(&e),
             ));
         });
 
         let edata = data.clone();
-        let _ = web::window().add_event_listener(move |e: WheelEvent| {
-            let mut edata = edata.borrow_mut();
-            if e.target()
-                .and_then(|target| <CanvasElement>::try_from(target).ok())
-                .map_or(true, |canvas| canvas != edata.canvas)
-            {
-                return;
-            }
-            let delta_x: f64 = js!(
-                return @{e.as_ref()}.deltaX;
-            )
-            .try_into()
-            .ok()
-            .unwrap_or(0.0);
-            let delta_y: f64 = js!(
-                return @{e.as_ref()}.deltaY;
-            )
-            .try_into()
-            .ok()
-            .unwrap_or(0.0);
-            let _ = edata.pending_events.push(WindowEvent::Scroll(
-                delta_x / 10.0,
-                -delta_y / 10.0,
-                translate_mouse_modifiers(&e),
-            ));
-        });
+        let _ = data
+            .clone()
+            .borrow_mut()
+            .canvas
+            .add_event_listener(move |e: WheelEvent| {
+                let mut edata = edata.borrow_mut();
+                let delta_x: f64 = js!(
+                    return @{e.as_ref()}.deltaX;
+                )
+                .try_into()
+                .ok()
+                .unwrap_or(0.0);
+                let delta_y: f64 = js!(
+                    return @{e.as_ref()}.deltaY;
+                )
+                .try_into()
+                .ok()
+                .unwrap_or(0.0);
+                let _ = edata.pending_events.push(WindowEvent::Scroll(
+                    delta_x / 10.0,
+                    -delta_y / 10.0,
+                    translate_mouse_modifiers(&e),
+                ));
+            });
 
         let edata = data.clone();
         let _ = web::window().add_event_listener(move |e: webevent::KeyDownEvent| {
